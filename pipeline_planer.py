@@ -21,9 +21,12 @@
  *                                                                         *
  ***************************************************************************/
 """
-from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
+from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtWidgets import QAction, QMessageBox, QTableWidgetItem
+
+from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
+from qgis.core import QgsProject
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -45,9 +48,18 @@ class PipelinePlaner:
         """
         # Save reference to the QGIS interface
         self.iface = iface
+        self.canvas = self.iface.mapCanvas()
+        
         # initialize plugin directory
         self.plugin_dir = os.path.dirname(__file__)
-        # initialize locale
+        
+        # Instantiate the classes we need to work with a maptool
+        self.addPipelinePoint = QgsMapToolEmitPoint(self.canvas)
+        self.rbPipeline = QgsRubberBand(self.canvas)    # should pass a geometry as well, but a line is the default
+        self.rbPipeline.setColor(Qt.red)
+        self.rbPipeline.setWidth(4)
+        
+        # initialize locale        
         locale = QSettings().value('locale/userLocale')[0:2]
         locale_path = os.path.join(
             self.plugin_dir,
@@ -66,6 +78,8 @@ class PipelinePlaner:
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
         self.first_start = None
+        
+        self.dlg = PipelinePlanerDialog()
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -166,9 +180,12 @@ class PipelinePlaner:
             text=self.tr(u'Pipeline Planner'),
             callback=self.run,
             parent=self.iface.mainWindow())
-
+            
         # will be set False in run()
         self.first_start = True
+        
+        # Connecting the map tools canvas click event
+        self.addPipelinePoint.canvasClicked.connect(self.evaluatePipeline)
 
 
     def unload(self):
@@ -182,19 +199,33 @@ class PipelinePlaner:
 
     def run(self):
         """Run method that performs all the real work"""
-
-        # Create the dialog with elements (after translation) and keep reference
-        # Only create GUI ONCE in callback, so that it will only load when the plugin is started
-        if self.first_start == True:
-            self.first_start = False
-            self.dlg = PipelinePlanerDialog()
-
-        # show the dialog
-        self.dlg.show()
-        # Run the dialog event loop
-        result = self.dlg.exec_()
-        # See if OK was pressed
-        if result:
-            # Do something useful here - delete the line containing pass and
-            # substitute with your code.
-            pass
+        self.canvas.setMapTool(self.addPipelinePoint)
+        
+    def evaluatePipeline(self, point, button):
+        if button == Qt.LeftButton:
+            self.rbPipeline.addPoint(point)
+            self.rbPipeline.show()
+        elif button == Qt.RightButton:
+            pipeline = self.rbPipeline.asGeometry()
+            # QMessageBox.information(None, "Pipeline", pipeline.asWkt()) # pass geometry as string
+            
+            self.dlg.tblImpacts.setRowCount(0)
+            
+            lyrRaptor = QgsProject.instance().mapLayersByName("Raptor Buffer")[0]
+            raptors = lyrRaptor.getFeatures(pipeline.boundingBox())
+            for raptor in raptors:
+                valConstraint = raptor.attribute("recentspec")
+                valID = raptor.attribute("Nest_ID")
+                valStatus = raptor.attribute("recentstat")
+                valDistance = pipeline.distance(raptor.geometry().centroid())
+                if pipeline.intersects(raptor.geometry()):
+                    row = self.dlg.tblImpacts.rowCount()
+                    self.dlg.tblImpacts.insertRow(row)
+                    self.dlg.tblImpacts.setItem(row, 0, QTableWidgetItem(valConstraint))
+                    self.dlg.tblImpacts.setItem(row, 1, QTableWidgetItem(str(valID)))
+                    self.dlg.tblImpacts.setItem(row, 2, QTableWidgetItem(valStatus))
+                    self.dlg.tblImpacts.setItem(row, 3, QTableWidgetItem("{:4.5f}".format(valDistance)))    # 4 decimals to the right and 5 to the left (floating point)
+                
+            self.dlg.show()
+            
+            self.rbPipeline.reset()
