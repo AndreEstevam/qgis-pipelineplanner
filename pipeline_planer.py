@@ -211,7 +211,11 @@ class PipelinePlaner:
             
             self.dlg.tblImpacts.setRowCount(0)
             
+            lyrBAEA = QgsProject.instance().mapLayersByName("BAEA Buffer")[0]
             lyrRaptor = QgsProject.instance().mapLayersByName("Raptor Buffer")[0]
+            lyrBUOWL = QgsProject.instance().mapLayersByName("BUOWL Buffer")[0]
+            
+            # RAPTORS
             raptors = lyrRaptor.getFeatures(pipeline.boundingBox())
             for raptor in raptors:
                 valConstraint = raptor.attribute("recentspec")
@@ -226,6 +230,36 @@ class PipelinePlaner:
                     self.dlg.tblImpacts.setItem(row, 2, QTableWidgetItem(valStatus))
                     self.dlg.tblImpacts.setItem(row, 3, QTableWidgetItem("{:4.5f}".format(valDistance)))    # 4 decimals to the right and 5 to the left (floating point)
                 
+            # BAEA
+            eagles = lyrBAEA.getFeatures(pipeline.boundingBox())
+            for eagle in eagles:
+                valConstraint = "Bald Eagle"
+                valID = eagle.attribute("nest_id")
+                valStatus = eagle.attribute("status")
+                valDistance = pipeline.distance(eagle.geometry().centroid())
+                if pipeline.intersects(eagle.geometry()):
+                    row = self.dlg.tblImpacts.rowCount()
+                    self.dlg.tblImpacts.insertRow(row)
+                    self.dlg.tblImpacts.setItem(row, 0, QTableWidgetItem(valConstraint))
+                    self.dlg.tblImpacts.setItem(row, 1, QTableWidgetItem(str(valID)))
+                    self.dlg.tblImpacts.setItem(row, 2, QTableWidgetItem(valStatus))
+                    self.dlg.tblImpacts.setItem(row, 3, QTableWidgetItem("{:4.5f}".format(valDistance)))    # 4 decimals to the right and 5 to the left (floating point)
+            
+            # BUOWL
+            owls = lyrBUOWL.getFeatures(pipeline.boundingBox())
+            for owl in owls:
+                valConstraint = owl.attribute("habitat")
+                valID = owl.attribute("habitat_id")
+                valStatus = owl.attribute("recentstat")
+                valDistance = pipeline.distance(owl.geometry().buffer(-0.001, 5))
+                if pipeline.intersects(owl.geometry()):
+                    row = self.dlg.tblImpacts.rowCount()
+                    self.dlg.tblImpacts.insertRow(row)
+                    self.dlg.tblImpacts.setItem(row, 0, QTableWidgetItem(valConstraint))
+                    self.dlg.tblImpacts.setItem(row, 1, QTableWidgetItem(str(valID)))
+                    self.dlg.tblImpacts.setItem(row, 2, QTableWidgetItem(valStatus))
+                    self.dlg.tblImpacts.setItem(row, 3, QTableWidgetItem("{:4.5f}".format(valDistance)))    # 4 decimals to the right and 5 to the left (floating point)
+            
             self.dlg.show()
             
             self.rbPipeline.reset()
